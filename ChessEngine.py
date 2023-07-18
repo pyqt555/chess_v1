@@ -4,7 +4,90 @@ from PieceMovement import *
 from functools import partial
 import cProfile
 import time
+import numpy as np
+import random
+#from engines import a
 
+ENGINE="my-sf"
+if ENGINE=="sf":
+    hist = []#qs/ks==unsure
+    import engines.sunfish.sunfish as sf
+    from engines.sunfish.sunfish import Position as pos
+    import engines.sunfish.tools.uci
+if ENGINE=="my-sf":
+    MOVETIME=2
+    hist = []#qs/ks==unsure
+    import engines.mySunfish.sunfish as sf
+    from engines.mySunfish.sunfish import Position as pos
+    import engines.mySunfish.tools.uci
+def fileAndRank(sqr):
+    return sqr%8, 7 - sqr//8
+
+def getFen():
+    piece_arr=np.array(["OO"]*64,dtype="<U2")
+    
+    for piece in allpieces:
+        for f in piece.piecelist:
+            piece_arr[f]=str(piece)
+    fen=""
+    for rank in piece_arr.reshape((8,8)):
+        empty=0
+        for file in rank:
+            if file == "OO":
+                empty+=1
+            else:
+                if file[0]=="w":
+                    file=file[1].upper()
+                else:
+                    file=file[1].lower()
+                if empty==0:
+                    fen+=file
+                else:
+                    fen+=str(empty)
+                    fen+=file
+                    empty=0
+            if empty==8:
+                fen+=(str(8))
+        fen+="/"
+    return fen
+def boardhash():
+    fen=""
+    for piece in allpieces:
+        fen+=str(piece.piecelist)+str(piece)
+    return fen
+def getSfI(colour):
+    ind=0
+    out=[]
+    piece_arr=np.array(["OO"]*64,dtype="<U2")
+    
+    for piece in allpieces:
+        for f in piece.piecelist:
+            piece_arr[f]=str(piece)
+    out.insert(ind,"         \n")
+    out.insert(ind,"         \n")
+
+    for rank in piece_arr.reshape((8,8)):
+        r=" "
+        
+        for file in rank:
+            if file == "OO":
+                r+="."
+            else:
+                if file[0]=="w":
+                    file=file[1].upper()
+                else:
+                    file=file[1].lower()
+                r+=file
+        r+="\n"
+        out.insert(ind,r)
+    out.insert(ind,"         \n")
+    out.insert(ind,"         \n")
+    n=""
+    for l in out: n+=l
+    if colour==BLACK:
+        n=n[::-1].swapcase()
+    return n
+                    
 # Global Constants:
 Pval = 1
 Nval = 3
@@ -14,8 +97,8 @@ Qval = 9
 Kval = 100
 
 mateThreshold = Kval - 2*Qval - 2*Pval
-DEPTH=4  # Change these numbers to change difficulty
-maxWidth = 10          #
+DEPTH=3  # Change these numbers to change difficulty
+maxWidth = 2**(DEPTH+1)        #
 NOISY_LOGGING = True
 current_time_millis = lambda: int(round(time.time() * 1000))
 
@@ -77,11 +160,71 @@ class Position:
     mateIn = 0
     #plies = 0
     coords = ''
+    def __str__(self):
+        return f"{self.movestart}, {self.moveend}"
     
-
+evals={}
+deepEvals={}
+lookups=0
+deeplookups =0
 # Returns the "best" move for colour
 def FindBest(colour, depth=DEPTH, width=maxWidth, first=True):
-    
+        
+    if ENGINE=="sf":
+        cs=updateCastlingRights()
+        hist.append(pos(getSfI(colour), 0, cs[0], cs[1], numtocoord(curState.enPassant), 0))
+        b=engines.sunfish.tools.uci.bestMove(sf,hist)
+        best=fromcoords(b)
+        p= Position()
+        p.evaluation=0
+        p.movestart=best[0]
+        p.moveend=best[1]
+        p.mateIn=0
+        p.coords=toCoords(best[0],best[1],str(pieceatsqr(best[0])),bool(pieceatsqr(best[1]))) 
+        print(p)
+        print(b)
+        print(best)
+        MovePiece(best[0],best[1])
+        cs=updateCastlingRights()
+        hist.append(pos(getSfI(colour), 0, cs[0], cs[1], numtocoord(curState.enPassant), 0))
+        UndoMove()
+        return p
+        
+    if ENGINE=="my-sf":
+        
+        cs=updateCastlingRights()
+        hist.append(pos(getSfI(colour), 0, cs[0], cs[1], numtocoord(curState.enPassant), 0))
+        b=engines.mySunfish.tools.uci.bestMove(sf,hist,MOVETIME)
+        best=fromcoords(b)
+        p= Position()
+        p.evaluation=0
+        p.movestart=best[0]
+        p.moveend=best[1]
+        p.mateIn=0
+        p.coords=toCoords(best[0],best[1],str(pieceatsqr(best[0])),bool(pieceatsqr(best[1]))) 
+        print(p)
+        print(b)
+        print(best)
+        MovePiece(best[0],best[1])
+        cs=updateCastlingRights()
+        hist.append(pos(getSfI(colour), 0, cs[0], cs[1], numtocoord(curState.enPassant), 0))
+        UndoMove()
+        boards={}
+        for pr in hist:
+            if pr.board in boards:
+                boards[pr.board]+=1
+            else:
+                boards[pr.board]=1
+        print(max(boards.values()))
+        
+        return p
+
+
+
+
+
+    old="""
+    global lookups,deeplookups
     time0 = current_time_millis()
     if width <= 0: width = 1
     
@@ -94,8 +237,8 @@ def FindBest(colour, depth=DEPTH, width=maxWidth, first=True):
 
     topMoves = []
     e = lambda pos: pos.evaluation
-
-
+    
+    #print(getSfI())
     ##rec_step_0
     if depth==0:
         last_top=[]
@@ -108,7 +251,17 @@ def FindBest(colour, depth=DEPTH, width=maxWidth, first=True):
                     i = pieceatsqr(end) # Executes before piece is moved
 
                     MovePiece(start, end)
-                    cur.evaluation = EvaluatePosition(colour)
+                    fen=boardhash()
+                    
+                    if fen in deepEvals:
+                        cur.evaluation=deepEvals[fen][0]
+                        deeplookups+=1
+                    elif fen in evals:
+                        cur.evaluation=evals[fen]
+                        lookups+=1
+                    else:
+                        cur.evaluation = EvaluatePosition(colour)
+                        evals[fen]=cur.evaluation
                     UndoMove()
 
                     if len(topMoves) < width:
@@ -132,7 +285,16 @@ def FindBest(colour, depth=DEPTH, width=maxWidth, first=True):
                 i = pieceatsqr(end) # Executes before piece is moved
 
                 MovePiece(start, end)
-                cur.evaluation = EvaluatePosition(colour)
+                fen=boardhash()
+                if fen in deepEvals:
+                    cur.evaluation=deepEvals[fen][0]
+                    deeplookups+=1
+                elif fen in evals:
+                    cur.evaluation=evals[fen]
+                    lookups+=1
+                else:
+                    cur.evaluation = EvaluatePosition(colour)
+                    evals[fen]=cur.evaluation
                 UndoMove()
 
                 if len(topMoves) < width:
@@ -165,17 +327,24 @@ def FindBest(colour, depth=DEPTH, width=maxWidth, first=True):
 
         # Actually move the Piece
         startPiece = MovePiece(pos.movestart, pos.moveend)
-        oppTop = FindBest(opp, depth-1, width-1, False)
-
-        if oppTop == 'C':
-            pos.mateIn = 1
-            pos.evaluation = Kval
-        elif oppTop == 'S':
-            pos.evaluation = 0
-        else:
-            if oppTop.mateIn: pos.mateIn = oppTop.mateIn + 1
-            pos.evaluation = (-1) * oppTop.evaluation
+        fen=boardhash()
+        if fen not in deepEvals or deepEvals[fen][2]<depth:
             
+            oppTop = FindBest(opp, depth-1,int(width/2), False)
+
+            if oppTop == 'C':
+                pos.mateIn = 1
+                pos.evaluation = Kval
+            elif oppTop == 'S':
+                pos.evaluation = 0
+            else:
+                if oppTop.mateIn: pos.mateIn = oppTop.mateIn + 1
+
+                pos.evaluation = (-1) * oppTop.evaluation
+                deepEvals[fen]=(pos.evaluation,oppTop,depth+1)
+        else:
+            deeplookups+=1
+            pos.evaluation,oppTop,_=deepEvals[fen]
         UndoMove()
 
         capture = (True if pieceatsqr(pos.moveend) else False)
@@ -183,6 +352,7 @@ def FindBest(colour, depth=DEPTH, width=maxWidth, first=True):
             "," + oppTop.coords
 
         if first:
+                
             if pos.mateIn:
                 printval = "Mate in " + str(pos.mateIn // 2)
             else:
@@ -191,17 +361,28 @@ def FindBest(colour, depth=DEPTH, width=maxWidth, first=True):
 
         # TODO: Add any extra plies to the assigned plies
         # assignedPlies += (assignedPlies - oppTop.plies) / len(topMoves)
-
+    #random.shuffle(topMoves)
     best = max(topMoves, key=e)
 
     if first:
         if NOISY_LOGGING:
             print ("Time:", current_time_millis() - time0)
+            print(f"dictSize: {evals.__len__()+deepEvals.__len__()}")
+            print(f"lookups: {lookups}")
+            print(f"deeplookups: {deeplookups}")
+            print(best)
+            hist = [sf.Position(getSfI(colour), 0, (True, True), (True, True), 0, 0)]
+            import engines.sunfish.tools.uci
+            print(fromcoords(engines.sunfish.tools.uci.bestMove(sf,hist[-1])))
+            print(type(best))
+            print(getSfI(colour))
+            print(getSfI(colour).__len__())
             print ("---------")
+
         if best.evaluation <= -(mateThreshold) and width <= maxWidth:
             return FindBest(colour, depth+1, maxWidth*2, False)
 
-    return best
+    return best"""
 
 
 # returns True if kingpos has the opposition against the enemy king
@@ -387,6 +568,10 @@ def toCoords(start,end,name=None,capture=None):
     if capture and name == 'p': pre += numtocoord(start)[0]
     if capture: pre += 'x'
     return pre + numtocoord(end)
+def fromcoords(cs):
+    cF={"a":0,"b":1,"c":2,"d":3,"e":4,"f":5,"g":6,"h":7}
+
+    return (cF[cs[0]]+(int(cs[1])-1)*8,cF[cs[2]]+(int(cs[3])-1)*8)
 
 
 pOn = lambda s,p: pm.boardlist[s] == id(p)
@@ -410,30 +595,39 @@ ThirdMoves = [(queensGambit, {(0, 0.5): (35, 26), (0.5, 1): (52, 44)}),
 openingDict = {(WHITE, 0): FirstMoves, (BLACK, 1): SecondMoves, (BLACK, 2): ThirdMoves}
 
 # Finds possible opening moves for black
-def OpeningMoves(colour, movenum, randnum):
-    if movenum >= 3 and colour == BLACK:
-        if pm.boardlist[27] == id(wn) and PieceMovement(62).count(45):
-            if pm.boardlist[34] != id(bp) and pm.boardlist[36] != id(bp):
-                return 62, 45
-        if pm.boardlist[27] == id(wp) and pm.boardlist[26] == id(wp):
-            if PieceMovement(62).count(45): # Nf6
-                return 62, 45
-    if (colour, movenum) in openingDict:
-        moves = openingDict[(colour, movenum)]
-        for (boolKey, m) in moves:
-            if boolKey(): # Calls the bool function in the moves list
-                for x in m:
-                    if x[0] < randnum and randnum < x[1]:
-                        return m[x]
-    global move_num
-    move_num = movenum                        
-    default = FindBest(colour)
-    return default.movestart, default.moveend
+#def OpeningMoves(colour, movenum, randnum):
+#    if movenum >= 3 and colour == BLACK:
+#        if pm.boardlist[27] == id(wn) and PieceMovement(62).count(45):
+#            if pm.boardlist[34] != id(bp) and pm.boardlist[36] != id(bp):
+#                return 62, 45
+#        if pm.boardlist[27] == id(wp) and pm.boardlist[26] == id(wp):
+#            if PieceMovement(62).count(45): # Nf6
+#                return 62, 45
+#    if (colour, movenum) in openingDict:
+#        moves = openingDict[(colour, movenum)]
+#        for (boolKey, m) in moves:
+#            if boolKey(): # Calls the bool function in the moves list
+#                for x in m:
+#                    if x[0] < randnum and randnum < x[1]:
+#                        return m[x]
+#    global move_num
+#    move_num = movenum                        
+#    default = FindBest(colour)
+#    return default.movestart, default.moveend
 
 
+    
 # Profiling to see what slows the engine down
 if __name__ == '__main__':
+    print(getSfI(WHITE))
     MovePiece(12, 28)
+    print(getSfI(BLACK))
     MovePiece(52, 36)
+    print(getSfI(WHITE))
     MovePiece(3, 12)
+    print(getSfI(BLACK))
+    print("--ignore")
+    print(getSfI(WHITE))
     cProfile.run('FindBest("b")')
+    
+    

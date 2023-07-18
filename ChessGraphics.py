@@ -209,6 +209,10 @@ def drawStuff(sqr=-1):
 # A class used for resetting the game
 class GameState:
     def __init__(self):
+        self.start_time=time.time()
+        self.whiteclock=0
+        self.blackclock=0
+        self.current_clock=time.time()
         self.movenumber = 0
         self.turn = WHITE
         self.randmove = random.random()
@@ -243,19 +247,25 @@ def UndoStuff():
 def switchTurn(turn):
     if turn == WHITE:
         mainState.turn = BLACK
+        mainState.whiteclock+=time.time()-mainState.current_clock
+        mainState.current_clock=time.time()
         mainState.movenumber += 1
+        print(f"You: {mainState.whiteclock} s, Computer: {mainState.blackclock} s")
     elif turn == BLACK:
         mainState.turn = WHITE
+        mainState.blackclock+=time.time()-mainState.current_clock
+        mainState.current_clock=time.time()
+        print(f"You: {mainState.whiteclock} s, Computer: {mainState.blackclock} s")
 
 
 # Makes a move for the computer
 def DoCompTurn(turn):
     if mainState.END: return
-    if mainState.movenumber <= 5:
-        start, end = ChessEngine.OpeningMoves(turn, mainState.movenumber, mainState.randmove)
-    else:
-        mv = ChessEngine.FindBest(turn)
-        start, end = mv.movestart, mv.moveend
+    #if mainState.movenumber <= 5:
+    #    start, end = ChessEngine.OpeningMoves(turn, mainState.movenumber, mainState.randmove)
+    #else:
+    mv = ChessEngine.FindBest(turn)
+    start, end = mv.movestart, mv.moveend
     checkForDead(start, end)
     pm.MovePiece(start, end)
     drawStuff(end)

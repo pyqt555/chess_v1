@@ -11,6 +11,10 @@ class Piece:
         self.name = name
         self.piecelist = []
         self.value = 0
+    def __str__(self) -> str:
+        return f"{self.colour}{self.name}"
+    def __repr__(self) -> str:
+        return str(self)+str(self.piecelist)
 
 
 class boardState:
@@ -116,7 +120,9 @@ def coordtonum(sqr):
 
 # Converts num back to a coordinate
 def numtocoord(num):
-    return chr(num%8 + 97) + str((num/8)+1)
+    if num==None:
+        return None
+    return chr(int(num%8 + 97)) + str(int((num//8)+1))
 
 
 # Returns the piece on square num
@@ -219,6 +225,7 @@ def updateCastlingRights():
         curState.ws = False
     if boardlist[63] != id(br):
         curState.bs = False
+    return (curState.wl, curState.ws),(curState.bl, curState.bs)
 
 
 # Undoes the previous move made
